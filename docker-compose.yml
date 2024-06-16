@@ -1,0 +1,19 @@
+version: "3.1"
+services:
+  mongodb:
+    image: mongodb/mongodb-enterprise-server:4.4.8-ubi8
+    restart: unless-stopped
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_config:/data/configdb
+      - mongodb_data:/data/db
+    networks:
+      local-network:
+volumes:
+  mongodb_config:
+  mongodb_data:
+networks:
+  local-network:
+    external: true
