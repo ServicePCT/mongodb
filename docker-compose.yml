@@ -1,20 +1,54 @@
+# mongodb — база happydebt. В ней данные должников: коллекции homebank_pull_info,
+# bailiff_aisoip, crosschat.
+#
+# Данные лежат ВНЕ каталога репозитория (см. MONGO_DATA_DIR в .env.example) — это
+# осознанное отличие от остальных сервисов. Причина: каталог проекта на хосте является
+# рабочей копией git, и одна неосторожная `git clean -xfd` в нём снесла бы базу целиком.
+# Для minio такое означало бы потерю файлов, здесь — потерю всей БД.
+
 services:
   mongodb:
-    image: mongodb/mongodb-enterprise-server:4.4.8-ubi8
-    restart: unless-stopped
+    # Community-редакция вместо mongodb-enterprise-server: лицензии на Enterprise нет
+    # (подтверждено владельцем 10.08.2026), а Community покрывает всё, что мы используем.
+    # Версия — переменной, чтобы поднять её одной правкой .env, когда станет возможно
+    # (см. README, раздел про AVX: сейчас 5.0+ на этих машинах физически не стартует).
+    image: mongo:${MONGO_VERSION:-4.4}
     container_name: mongodb
+    restart: unless-stopped
     ports:
-      - "27017:27017"
+      # ⚠️ Порт открыт наружу и аутентификации у базы НЕТ — то есть подключиться и
+      # прочитать данные может кто угодно в сети. Оставлено намеренно: к базе ходит много
+      # сервисов, и закрывать порт вместе с включением auth решено отдельной задачей,
+      # чтобы не уронить их разом. Адрес привязки вынесен в переменную, чтобы это можно
+      # было сузить в один шаг, не трогая файл в гите.
+      - "${MONGO_BIND:-0.0.0.0}:${MONGO_PORT:-27017}:27017"
     volumes:
-      - mongodb_config:/data/configdb
-      - mongodb_data:/data/db
+      # Абсолютный путь вне рабочей копии git. Официальный образ mongo сам выставляет
+      # владельца каталога при старте (entrypoint работает от root и понижает права),
+      # поэтому chown вручную не нужен — проверено на стенде 10.08.2026.
+      - ${MONGO_DATA_DIR:-/srv/data/mongodb}/db:/data/db
+      - ${MONGO_DATA_DIR:-/srv/data/mongodb}/configdb:/data/configdb
+    healthcheck:
+      # Проба через саму СУБД, а не через открытый порт: слушающий сокет ещё не значит,
+      # что база приняла соединение и отвечает.
+      # В 4.4 клиент называется `mongo`, начиная с 5.0 — `mongosh`; проверяем оба, чтобы
+      # healthcheck пережил смену версии.
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ping:1}).ok' 2>/dev/null || mongo --quiet --eval 'db.runCommand({ping:1}).ok'"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 40s
+    # Дефолт docker (64) для базы мал: при активной работе mongod легко упирается в него
+    # и начинает ронять соединения.
+    ulimits:
+      nofile:
+        soft: 64000
+        hard: 64000
     networks:
-      local-network:
-
-volumes:
-  mongodb_config:
-  mongodb_data:
+      - local-network
 
 networks:
+  # Сеть общая для нескольких сервисов, создаётся вне этого compose.
+  # Если её нет — `docker network create local-network`.
   local-network:
     external: true
