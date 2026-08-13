@@ -11,6 +11,20 @@
 pipeline {
     agent any
 
+    environment {
+        // Ключи выкатки — из хранилища ПАПКИ `mongo`, а не из общего (HAP-500). Общий
+        // deploy-staging-ssh виден сборке любого подключённого проекта: сборка исполняет
+        // Jenkinsfile из своего репозитория, и запросить чужой credential по id ей ничто
+        // не мешает.
+        // Своих секретов в Jenkins у проекта нет — в папке лежит только ключ выкатки. Смысл не в
+        // защите секрета, а в том, чтобы перезапустить базу не могла сборка чужого сервиса.
+        DEPLOY_CREDENTIALS_ID = 'deploy-mongo-staging-ssh'
+        // Прод-ключа ещё нет — как и прод-хоста. Идентификатор проставлен заранее, чтобы
+        // первая прод-выкатка упала с «credential not found», а не уехала на боевую машину
+        // стендовым ключом.
+        PROD_CREDENTIALS_ID   = 'deploy-mongo-prod-ssh'
+    }
+
     parameters {
         // ⚠️ При смене дефолта Jenkins применит новое значение со ВТОРОЙ сборки
         // (см. jenkins-infra/DEPLOY.md §10).
@@ -55,6 +69,7 @@ pipeline {
                     env: 'staging',
                     host: params.STAGING_HOST,
                     path: params.STAGING_PATH,
+                    credentialsId: env.DEPLOY_CREDENTIALS_ID,
                     approve: false
                 )
             }
@@ -74,6 +89,7 @@ pipeline {
                     env: 'prod',
                     host: params.PROD_HOST,
                     path: params.PROD_PATH,
+                    credentialsId: env.PROD_CREDENTIALS_ID,
                     approve: true
                 )
             }
